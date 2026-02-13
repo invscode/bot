@@ -39,12 +39,11 @@ Note:
     Press Ctrl+C to exit the application.
 """
 
-import os
 import sys
 import asyncio
-import argparse
 import logging
 from pathlib import Path
+import yaml
 
 # Suppress noisy logs
 logging.getLogger("src.websocket_client").setLevel(logging.WARNING)
@@ -180,22 +179,62 @@ class OrderbookTUI:
         print(output, flush=True)
 
 
+def load_config():
+    """Load configuration from YAML file in the same directory."""
+    config_file = Path(__file__).parent / "orderbook_config.yaml"
+
+    if not config_file.exists():
+        print(f"{Colors.RED}错误: 配置文件 '{config_file}' 不存在{Colors.RESET}")
+        print(f"请在 '{config_file.parent}' 目录下创建配置文件 'orderbook_config.yaml'")
+        print(f"\n示例配置文件内容:")
+        print(f"""
+# Orderbook Viewer 配置文件
+coin: ETH
+""")
+        sys.exit(1)
+
+    try:
+        with open(config_file, 'r', encoding='utf-8') as f:
+            config = yaml.safe_load(f)
+    except yaml.YAMLError as e:
+        print(f"{Colors.RED}错误: 配置文件 YAML 格式错误: {e}{Colors.RESET}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"{Colors.RED}错误: 读取配置文件失败: {e}{Colors.RESET}")
+        sys.exit(1)
+
+    if config is None:
+        print(f"{Colors.RED}错误: 配置文件为空{Colors.RESET}")
+        sys.exit(1)
+
+    if 'coin' not in config:
+        print(f"{Colors.RED}错误: 配置文件中缺少必需的参数 'coin'{Colors.RESET}")
+        sys.exit(1)
+
+    coin = config['coin']
+
+    if not isinstance(coin, str):
+        print(f"{Colors.RED}错误: 参数 'coin' 必须是字符串类型{Colors.RESET}")
+        sys.exit(1)
+
+    coin = coin.upper().strip()
+
+    if not coin:
+        print(f"{Colors.RED}错误: 参数 'coin' 不能为空{Colors.RESET}")
+        sys.exit(1)
+
+    valid_coins = ["BTC", "ETH", "SOL", "XRP"]
+    if coin not in valid_coins:
+        print(f"{Colors.RED}错误: 无效的币种 '{coin}'。支持的币种: {', '.join(valid_coins)}{Colors.RESET}")
+        sys.exit(1)
+
+    return coin
+
+
 def main():
     """Main entry point."""
-    parser = argparse.ArgumentParser(
-        description="Orderbook TUI for Polymarket 15-minute markets"
-    )
-    parser.add_argument(
-        "--coin",
-        type=str,
-        default="ETH",
-        choices=["BTC", "ETH", "SOL", "XRP"],
-        help="Coin to monitor (default: ETH)"
-    )
-
-    args = parser.parse_args()
-
-    tui = OrderbookTUI(coin=args.coin)
+    coin = load_config()
+    tui = OrderbookTUI(coin=coin)
 
     try:
         asyncio.run(tui.run())

@@ -1,0 +1,3 @@
+# Orderbook Viewer 配置文件
+# 支持的币种: BTC, ETH, SOL, XRP
+coin: BTC
