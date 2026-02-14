@@ -1,51 +1,4 @@
-"""
-Polymarket Arbitrage Bot - Real-time WebSocket Client
 
-Provides WebSocket connectivity to the Polymarket CLOB API for real-time
-market data streaming. This module enables low-latency orderbook updates,
-price change notifications, and trade event monitoring.
-
-Features:
-    - Real-time orderbook updates with snapshot management
-    - Automatic reconnection with exponential backoff
-    - Price change notifications and mid-price tracking
-    - Trade event monitoring
-    - Multi-asset subscription support
-    - Cached orderbook access for fast lookups
-
-WebSocket Connection:
-    - URL: wss://ws-subscriptions-clob.polymarket.com/ws/market
-    - Protocol: JSON-RPC over WebSocket
-    - Heartbeat: Automatic ping/pong to maintain connection
-    - Reconnection: Automatic with exponential backoff on failures
-
-Example:
-    from src.websocket_client import MarketWebSocket, OrderbookSnapshot
-
-    async def on_book_update(snapshot: OrderbookSnapshot):
-        print(f"Asset: {snapshot.asset_id}")
-        print(f"Mid price: {snapshot.mid_price:.4f}")
-        print(f"Best bid: {snapshot.best_bid:.4f}")
-        print(f"Best ask: {snapshot.best_ask:.4f}")
-
-    # Initialize and connect
-    ws = MarketWebSocket()
-    ws.on_book = on_book_update
-
-    # Subscribe to assets
-    await ws.subscribe(["token_id_1", "token_id_2"])
-
-    # Start WebSocket connection (blocks until disconnected)
-    await ws.run()
-
-    # Or run with auto-reconnect
-    await ws.run(auto_reconnect=True)
-
-Note:
-    The WebSocket client automatically handles connection management,
-    message parsing, and orderbook state synchronization. Callbacks
-    are executed asynchronously and should not block for extended periods.
-"""
 
 import json
 import asyncio
@@ -58,56 +11,56 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Suppress websockets 12.0+ AttributeError in connection_lost callback
-# This is a known compatibility issue in websockets 12.x
+
+
 class WebsocketsErrorFilter(logging.Filter):
-    """Filter to suppress websockets connection_lost AttributeError."""
+    
 
     def filter(self, record):
-        # Suppress AttributeError about 'recv_messages' in connection_lost callback
+        
         if "recv_messages" in record.getMessage() and "AttributeError" in record.getMessage():
             return False
         return True
 
-# Apply filter to asyncio logger where this error occurs
+
 asyncio_logger = logging.getLogger("asyncio")
 if not any(isinstance(f, WebsocketsErrorFilter) for f in asyncio_logger.filters):
     asyncio_logger.addFilter(WebsocketsErrorFilter())
 
-# Patch asyncio event loop to suppress the websockets 12.0+ AttributeError
+
 _original_exception_handler = None
 
 
 def _exception_handler(loop, context):
-    """Custom exception handler to suppress websockets 12.0+ AttributeError."""
+    
     exception = context.get('exception')
     if exception and isinstance(exception, AttributeError):
         if 'recv_messages' in str(exception):
-            # Suppress this specific error from websockets 12.0+
+            
             return
-    # Call original handler for other exceptions
+    
     if _original_exception_handler:
         _original_exception_handler(loop, context)
 
 
-# Install custom exception handler on module load
+
 try:
     loop = asyncio.get_event_loop()
     if not loop.get_exception_handler():
         _original_exception_handler = loop.get_exception_handler()
         loop.set_exception_handler(_exception_handler)
 except RuntimeError:
-    # No event loop running yet, will be set later
+    
     pass
 
 
-# WebSocket endpoints
+
 WSS_MARKET_URL = "wss://ws-subscriptions-clob.polymarket.com/ws/market"
 WSS_USER_URL = "wss://ws-subscriptions-clob.polymarket.com/ws/user"
 
 
 def _load_websockets():
-    """Resolve WebSocket client functions without importing legacy APIs."""
+    
     try:
         from websockets.asyncio.client import connect as ws_connect
         from websockets.exceptions import ConnectionClosed
@@ -122,14 +75,14 @@ def _load_websockets():
 
 @dataclass
 class OrderbookLevel:
-    """Single level in the orderbook."""
+    
     price: float
     size: float
 
 
 @dataclass
 class OrderbookSnapshot:
-    """Complete orderbook snapshot."""
+    
     asset_id: str
     market: str
     timestamp: int
@@ -139,17 +92,17 @@ class OrderbookSnapshot:
 
     @property
     def best_bid(self) -> float:
-        """Get best bid price."""
+        
         return self.bids[0].price if self.bids else 0.0
 
     @property
     def best_ask(self) -> float:
-        """Get best ask price."""
+        
         return self.asks[0].price if self.asks else 1.0
 
     @property
     def mid_price(self) -> float:
-        """Get mid price."""
+        
         if self.best_bid > 0 and self.best_ask < 1:
             return (self.best_bid + self.best_ask) / 2
         elif self.best_bid > 0:
@@ -160,7 +113,7 @@ class OrderbookSnapshot:
 
     @classmethod
     def from_message(cls, msg: Dict[str, Any]) -> "OrderbookSnapshot":
-        """Create from WebSocket book message."""
+        
         bids = [
             OrderbookLevel(price=float(b["price"]), size=float(b["size"]))
             for b in msg.get("bids", [])
@@ -169,7 +122,7 @@ class OrderbookSnapshot:
             OrderbookLevel(price=float(a["price"]), size=float(a["size"]))
             for a in msg.get("asks", [])
         ]
-        # Sort bids descending, asks ascending
+        
         bids.sort(key=lambda x: x.price, reverse=True)
         asks.sort(key=lambda x: x.price)
 
@@ -185,7 +138,7 @@ class OrderbookSnapshot:
 
 @dataclass
 class PriceChange:
-    """Price change event."""
+    
     asset_id: str
     price: float
     size: float
@@ -196,7 +149,7 @@ class PriceChange:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "PriceChange":
-        """Create from price_change dict."""
+        
         return cls(
             asset_id=data.get("asset_id", ""),
             price=float(data.get("price", 0)),
@@ -210,7 +163,7 @@ class PriceChange:
 
 @dataclass
 class LastTradePrice:
-    """Last trade price event."""
+    
     asset_id: str
     market: str
     price: float
@@ -221,7 +174,7 @@ class LastTradePrice:
 
     @classmethod
     def from_message(cls, msg: Dict[str, Any]) -> "LastTradePrice":
-        """Create from last_trade_price message."""
+        
         return cls(
             asset_id=msg.get("asset_id", ""),
             market=msg.get("market", ""),
@@ -233,7 +186,7 @@ class LastTradePrice:
         )
 
 
-# Type aliases for callbacks
+
 BookCallback = Callable[[OrderbookSnapshot], Union[None, Awaitable[None]]]
 PriceChangeCallback = Callable[[str, List[PriceChange]], Union[None, Awaitable[None]]]
 TradeCallback = Callable[[LastTradePrice], Union[None, Awaitable[None]]]
@@ -241,24 +194,7 @@ ErrorCallback = Callable[[Exception], None]
 
 
 class MarketWebSocket:
-    """
-    WebSocket client for Polymarket market data.
-
-    Provides real-time updates for:
-    - Orderbook snapshots (book events)
-    - Price changes (price_change events)
-    - Last trade prices (last_trade_price events)
-
-    Example:
-        ws = MarketWebSocket()
-
-        @ws.on_book
-        async def handle_book(snapshot: OrderbookSnapshot):
-            print(f"Mid price: {snapshot.mid_price}")
-
-        await ws.subscribe(["token_id_1", "token_id_2"])
-        await ws.run()
-    """
+    
 
     def __init__(
         self,
@@ -267,15 +203,7 @@ class MarketWebSocket:
         ping_interval: float = 20.0,
         ping_timeout: float = 10.0,
     ):
-        """
-        Initialize WebSocket client.
-
-        Args:
-            url: WebSocket endpoint URL
-            reconnect_interval: Seconds between reconnection attempts
-            ping_interval: Seconds between ping messages
-            ping_timeout: Seconds to wait for pong response
-        """
+        
         self.url = url
         self.reconnect_interval = reconnect_interval
         self.ping_interval = ping_interval
@@ -283,15 +211,15 @@ class MarketWebSocket:
 
         self._ws_connect, self._connection_closed = _load_websockets()
 
-        # Connection state
+        
         self._ws: Optional["WebSocketClientProtocol"] = None
         self._running = False
         self._subscribed_assets: Set[str] = set()
 
-        # Orderbook cache
+        
         self._orderbooks: Dict[str, OrderbookSnapshot] = {}
 
-        # Callbacks
+        
         self._on_book: Optional[BookCallback] = None
         self._on_price_change: Optional[PriceChangeCallback] = None
         self._on_trade: Optional[TradeCallback] = None
@@ -301,16 +229,16 @@ class MarketWebSocket:
 
     @property
     def is_connected(self) -> bool:
-        """Check if WebSocket is connected."""
+        
         if self._ws is None:
             return False
-        # websockets >= 12.0 uses .state, older versions use .open
+        
         try:
-            # Try newer API first
+            
             from websockets.protocol import State
             return self._ws.state == State.OPEN
         except (ImportError, AttributeError):
-            # Fallback to older API
+            
             try:
                 return self._ws.open
             except AttributeError:
@@ -318,61 +246,56 @@ class MarketWebSocket:
 
     @property
     def orderbooks(self) -> Dict[str, OrderbookSnapshot]:
-        """Get cached orderbooks."""
+        
         return self._orderbooks
 
     def get_orderbook(self, asset_id: str) -> Optional[OrderbookSnapshot]:
-        """Get cached orderbook for asset."""
+        
         return self._orderbooks.get(asset_id)
 
     def get_mid_price(self, asset_id: str) -> float:
-        """Get mid price for asset."""
+        
         ob = self._orderbooks.get(asset_id)
         return ob.mid_price if ob else 0.0
 
-    # Callback decorators
+    
     def on_book(self, callback: BookCallback) -> BookCallback:
-        """Decorator to set book update callback."""
+        
         self._on_book = callback
         return callback
 
     def on_price_change(self, callback: PriceChangeCallback) -> PriceChangeCallback:
-        """Decorator to set price change callback."""
+        
         self._on_price_change = callback
         return callback
 
     def on_trade(self, callback: TradeCallback) -> TradeCallback:
-        """Decorator to set trade callback."""
+        
         self._on_trade = callback
         return callback
 
     def on_error(self, callback: ErrorCallback) -> ErrorCallback:
-        """Decorator to set error callback."""
+        
         self._on_error = callback
         return callback
 
     def on_connect(self, callback: Callable[[], None]) -> Callable[[], None]:
-        """Decorator to set connect callback."""
+        
         self._on_connect = callback
         return callback
 
     def on_disconnect(self, callback: Callable[[], None]) -> Callable[[], None]:
-        """Decorator to set disconnect callback."""
+        
         self._on_disconnect = callback
         return callback
 
     async def connect(self) -> bool:
-        """
-        Connect to WebSocket.
-
-        Returns:
-            True if connected successfully
-        """
+        
         try:
             if self._ws_connect is None:
                 raise RuntimeError("websockets is not installed")
 
-            # Clean up existing connection if any
+            
             if self._ws:
                 try:
                     await self._ws.close()
@@ -391,22 +314,22 @@ class MarketWebSocket:
             return True
         except Exception as e:
             logger.error(f"WebSocket connection failed: {e}")
-            # Clean up failed connection
+            
             if self._ws:
                 try:
                     await self._ws.close()
                 except Exception:
                     pass
                 self._ws = None
-            # Give time for any pending callbacks to complete
-            # This prevents AttributeError from websockets 12.0+ connection_lost callback
+            
+            
             await asyncio.sleep(0.01)
             if self._on_error:
                 self._on_error(e)
             return False
 
     async def disconnect(self) -> None:
-        """Disconnect from WebSocket."""
+        
         self._running = False
         if self._ws:
             await self._ws.close()
@@ -416,21 +339,12 @@ class MarketWebSocket:
                 self._on_disconnect()
 
     async def subscribe(self, asset_ids: List[str], replace: bool = False) -> bool:
-        """
-        Subscribe to market data for assets.
-
-        Args:
-            asset_ids: List of token IDs to subscribe to
-            replace: If True, replace existing subscriptions (clears old data)
-
-        Returns:
-            True if subscription sent successfully
-        """
+        
         if not asset_ids:
             return False
 
         if replace:
-            # Clear old subscriptions and cached data
+            
             self._subscribed_assets.clear()
             self._orderbooks.clear()
 
@@ -438,7 +352,7 @@ class MarketWebSocket:
         logger.info(f"subscribe() called with {len(asset_ids)} assets, is_connected={self.is_connected}, ws={self._ws is not None}")
 
         if not self.is_connected:
-            # Will subscribe after connect
+            
             logger.info("Not connected yet, will subscribe after connect")
             return True
 
@@ -460,15 +374,7 @@ class MarketWebSocket:
             return False
 
     async def subscribe_more(self, asset_ids: List[str]) -> bool:
-        """
-        Subscribe to additional assets.
-
-        Args:
-            asset_ids: Additional token IDs to subscribe to
-
-        Returns:
-            True if subscription sent successfully
-        """
+        
         if not asset_ids:
             return False
 
@@ -491,15 +397,7 @@ class MarketWebSocket:
             return False
 
     async def unsubscribe(self, asset_ids: List[str]) -> bool:
-        """
-        Unsubscribe from assets.
-
-        Args:
-            asset_ids: Token IDs to unsubscribe from
-
-        Returns:
-            True if unsubscription sent successfully
-        """
+        
         if not self.is_connected or not asset_ids:
             return False
 
@@ -519,7 +417,7 @@ class MarketWebSocket:
             return False
 
     async def _handle_message(self, data: Dict[str, Any]) -> None:
-        """Handle incoming WebSocket message."""
+        
         event_type = data.get("event_type", "")
         logger.debug(f"Received event: {event_type}, keys: {list(data.keys())}")
 
@@ -547,14 +445,14 @@ class MarketWebSocket:
             await self._run_callback(self._on_trade, trade, label="trade")
 
         elif event_type == "tick_size_change":
-            # Log but don't handle specially
+            
             logger.debug(f"Tick size change: {data}")
 
         else:
             logger.debug(f"Unknown event type: {event_type}")
 
     async def _run_callback(self, callback: Optional[Callable[..., Any]], *args: Any, label: str) -> None:
-        """Run a callback that may be sync or async, logging failures."""
+        
         if not callback:
             return
         try:
@@ -565,7 +463,7 @@ class MarketWebSocket:
             logger.error(f"Error in {label} callback: {e}")
 
     async def _run_loop(self) -> None:
-        """Main message processing loop."""
+        
         msg_count = 0
         while self._running and self.is_connected:
             try:
@@ -575,13 +473,13 @@ class MarketWebSocket:
                 )
                 msg_count += 1
 
-                # Log first 5 messages, then every 1000
+                
                 if msg_count <= 5 or msg_count % 1000 == 0:
-                    logger.info(f"WS message #{msg_count}: {message[:200] if len(message) > 200 else message}")
+                    logger.info(f"WS message 
 
                 data = json.loads(message)
 
-                # Handle array of messages
+                
                 if isinstance(data, list):
                     for item in data:
                         await self._handle_message(item)
@@ -601,16 +499,11 @@ class MarketWebSocket:
                     self._on_error(e)
 
     async def run(self, auto_reconnect: bool = True) -> None:
-        """
-        Run the WebSocket client.
-
-        Args:
-            auto_reconnect: Whether to automatically reconnect on disconnect
-        """
+        
         self._running = True
 
         while self._running:
-            # Connect
+            
             if not await self.connect():
                 if auto_reconnect:
                     logger.info(f"Reconnecting in {self.reconnect_interval}s...")
@@ -619,15 +512,15 @@ class MarketWebSocket:
                 else:
                     break
 
-            # Subscribe to assets
+            
             if self._subscribed_assets:
                 logger.info(f"Sending subscription for {len(self._subscribed_assets)} assets after connect")
                 await self.subscribe(list(self._subscribed_assets))
 
-            # Run message loop
+            
             await self._run_loop()
 
-            # Handle disconnect
+            
             if self._on_disconnect:
                 self._on_disconnect()
 
@@ -641,41 +534,27 @@ class MarketWebSocket:
                 break
 
     async def run_until_cancelled(self) -> None:
-        """Run until cancelled or stopped."""
+        
         try:
             await self.run(auto_reconnect=True)
         except asyncio.CancelledError:
             await self.disconnect()
 
     def stop(self) -> None:
-        """Stop the WebSocket client."""
+        
         self._running = False
 
 
 class OrderbookManager:
-    """
-    High-level orderbook manager with WebSocket subscription.
-
-    Provides a simpler interface for tracking multiple orderbooks
-    with callbacks for price updates.
-
-    Example:
-        manager = OrderbookManager()
-
-        @manager.on_price_update
-        async def handle_price(asset_id: str, mid_price: float):
-            print(f"{asset_id}: {mid_price}")
-
-        await manager.start(["token_1", "token_2"])
-    """
+    
 
     def __init__(self):
-        """Initialize orderbook manager."""
+        
         self._ws = MarketWebSocket()
         self._price_callback: Optional[Callable[[str, float, float, float], None]] = None
         self._connected = False
 
-        # Set up internal callbacks
+        
         @self._ws.on_book
         async def on_book(snapshot: OrderbookSnapshot):
             if self._price_callback:
@@ -692,60 +571,51 @@ class OrderbookManager:
                     logger.error(f"Error in price callback: {e}")
 
         @self._ws.on_connect
-        def on_connect():  # pyright: ignore[reportUnusedFunction]
+        def on_connect():  
             self._connected = True
 
         @self._ws.on_disconnect
-        def on_disconnect():  # pyright: ignore[reportUnusedFunction]
+        def on_disconnect():  
             self._connected = False
 
     @property
     def is_connected(self) -> bool:
-        """Check if connected."""
+        
         return self._connected
 
     def get_price(self, asset_id: str) -> float:
-        """Get current mid price for asset."""
+        
         return self._ws.get_mid_price(asset_id)
 
     def get_orderbook(self, asset_id: str) -> Optional[OrderbookSnapshot]:
-        """Get cached orderbook for asset."""
+        
         return self._ws.get_orderbook(asset_id)
 
     def on_price_update(
         self,
         callback: Callable[[str, float, float, float], None]
     ) -> Callable[[str, float, float, float], None]:
-        """
-        Set callback for price updates.
-
-        Callback receives: asset_id, mid_price, best_bid, best_ask
-        """
+        
         self._price_callback = callback
         return callback
 
     async def start(self, asset_ids: List[str]) -> None:
-        """
-        Start tracking orderbooks.
-
-        Args:
-            asset_ids: Token IDs to track
-        """
+        
         await self._ws.subscribe(asset_ids)
         await self._ws.run(auto_reconnect=True)
 
     async def subscribe(self, asset_ids: List[str]) -> bool:
-        """Subscribe to additional assets."""
+        
         return await self._ws.subscribe_more(asset_ids)
 
     async def unsubscribe(self, asset_ids: List[str]) -> bool:
-        """Unsubscribe from assets."""
+        
         return await self._ws.unsubscribe(asset_ids)
 
     def stop(self) -> None:
-        """Stop the manager."""
+        
         self._ws.stop()
 
     async def close(self) -> None:
-        """Close connection."""
+        
         await self._ws.disconnect()
