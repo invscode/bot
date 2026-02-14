@@ -28,11 +28,79 @@ Usage:
 
 import time
 import uuid
+import yaml
+from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Optional, Dict, List, Literal
 
 
 ExitType = Literal["take_profit", "stop_loss", None]
+
+
+def load_tp_sl_from_config():
+    """
+    从 flash_crash_config.yaml 读取止盈止损值。
+
+    Returns:
+        tuple: (take_profit, stop_loss) 或默认值 (0.10, 0.05)
+    """
+    config_file = Path(__file__).parent.parent / "apps" / "flash_crash_config.yaml"
+    default_take_profit = 0.10
+    default_stop_loss = 0.05
+
+    try:
+        if not config_file.exists():
+            print(f"[警告] 配置文件 '{config_file}' 不存在")
+            print(f"[信息] 使用默认止盈止损值: 止盈={default_take_profit}, 止损={default_stop_loss}")
+            return default_take_profit, default_stop_loss
+
+        with open(config_file, 'r', encoding='utf-8') as f:
+            config = yaml.safe_load(f)
+
+        if config is None:
+            print(f"[警告] 配置文件为空")
+            print(f"[信息] 使用默认止盈止损值: 止盈={default_take_profit}, 止损={default_stop_loss}")
+            return default_take_profit, default_stop_loss
+
+        take_profit = config.get('take_profit')
+        stop_loss = config.get('stop_loss')
+
+        # 验证参数
+        if take_profit is None:
+            print(f"[警告] 配置文件中缺少 'take_profit' 参数")
+            take_profit = default_take_profit
+        elif not isinstance(take_profit, (int, float)) or take_profit <= 0:
+            print(f"[警告] 'take_profit' 必须是正数，当前值: {take_profit}")
+            take_profit = default_take_profit
+
+        if stop_loss is None:
+            print(f"[警告] 配置文件中缺少 'stop_loss' 参数")
+            stop_loss = default_stop_loss
+        elif not isinstance(stop_loss, (int, float)) or stop_loss <= 0:
+            print(f"[警告] 'stop_loss' 必须是正数，当前值: {stop_loss}")
+            stop_loss = default_stop_loss
+
+        # 如果使用了默认值，给出提示
+        if (take_profit == default_take_profit and stop_loss == default_stop_loss and
+            (config.get('take_profit') is None or config.get('stop_loss') is None)):
+            print(f"[信息] 读取配置文件成功，使用止盈={take_profit}, 止损={stop_loss}")
+        elif (config.get('take_profit') is not None and config.get('stop_loss') is not None and
+              isinstance(config.get('take_profit'), (int, float)) and isinstance(config.get('stop_loss'), (int, float)) and
+              config.get('take_profit') > 0 and config.get('stop_loss') > 0):
+            print(f"[信息] 读取配置文件成功，使用止盈={take_profit}, 止损={stop_loss}")
+        else:
+            print(f"[信息] 读取配置文件部分失败，使用止盈={take_profit}, 止损={stop_loss} (部分为默认值)")
+
+        return take_profit, stop_loss
+
+    except yaml.YAMLError as e:
+        print(f"[警告] 配置文件 YAML 格式错误: {e}")
+        print(f"[信息] 使用默认止盈止损值: 止盈={default_take_profit}, 止损={default_stop_loss}")
+        return default_take_profit, default_stop_loss
+    except Exception as e:
+        print(f"[警告] 读取配置文件失败: {e}")
+        print(f"[信息] 使用默认止盈止损值: 止盈={default_take_profit}, 止损={default_stop_loss}")
+        return default_take_profit, default_stop_loss
 
 
 @dataclass
@@ -111,9 +179,12 @@ class PositionManager:
     losing_trades: int = 0
 
     def __post_init__(self):
-        """Initialize state."""
+        """Initialize state and load TP/SL from config file."""
         self._positions = {}
         self._positions_by_side = {}
+
+        # 从配置文件加载止盈止损值
+        self.take_profit, self.stop_loss = load_tp_sl_from_config()
 
     @property
     def position_count(self) -> int:

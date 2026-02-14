@@ -59,7 +59,7 @@ from typing import Optional, Dict, Any, List, Callable, TypeVar
 from dataclasses import dataclass, field
 from enum import Enum
 
-from .config import Config, BuilderConfig
+from .config import Config, ConfigNotFoundError
 from .signer import OrderSigner, Order
 from .client import ClobClient, RelayerClient, ApiCredentials
 from .crypto import KeyManager, CryptoError, InvalidPasswordError
@@ -141,68 +141,46 @@ class TradingBot:
     def __init__(
         self,
         config_path: Optional[str] = None,
-        config: Optional[Config] = None,
-        safe_address: Optional[str] = None,
-        builder_creds: Optional[BuilderConfig] = None,
-        private_key: Optional[str] = None,
-        encrypted_key_path: Optional[str] = None,
-        password: Optional[str] = None,
-        api_creds_path: Optional[str] = None,
         log_level: int = logging.INFO
     ):
         """
-        Initialize trading bot.
+        Initialize trading bot from configuration file.
 
-        Can be initialized in multiple ways:
-
-        1. From config file:
+        Usage:
            bot = TradingBot(config_path="config.yaml")
-
-        2. From Config object:
-           bot = TradingBot(config=my_config)
-
-        3. With manual parameters:
-           bot = TradingBot(
-               safe_address="0x...",
-               builder_creds=builder_creds,
-               private_key="0x..."
-           )
-
-        4. With encrypted key:
-           bot = TradingBot(
-               safe_address="0x...",
-               encrypted_key_path="credentials/key.enc",
-               password="mypassword"
-           )
 
         Args:
             config_path: Path to config YAML file
-            config: Config object
-            safe_address: Safe/Proxy wallet address
-            builder_creds: Builder Program credentials
-            private_key: Raw private key (with 0x prefix)
-            encrypted_key_path: Path to encrypted key file
-            password: Password for encrypted key
-            api_creds_path: Path to API credentials file
             log_level: Logging level
         """
         # Set log level
         logger.setLevel(log_level)
 
-        # Load configuration
+        # Load configuration from file
         if config_path:
-            self.config = Config.load(config_path)
-        elif config:
-            self.config = config
+            try:
+                self.config = Config.load(config_path)
+            except ConfigNotFoundError:
+                logger.error(f"Configuration file not found: {config_path}")
+                raise
         else:
-            self.config = Config()
+            # Try to load default config file
+            try:
+                self.config = Config.load("config.yaml")
+            except ConfigNotFoundError:
+                logger.error("No configuration file provided and 'config.yaml' not found")
+                raise TradingBotError(
+                    "Configuration file is required. Please provide config_path parameter "
+                    "or ensure 'config.yaml' exists in the current directory."
+                )
 
-        # Override with provided parameters
-        if safe_address:
-            self.config.safe_address = safe_address
-        if builder_creds:
-            self.config.builder = builder_creds
-            self.config.use_gasless = True
+        # Validate required configuration
+        if not self.config.safe_address:
+            logger.error("Polymarket proxy wallet address (safe_address) is required in config file")
+            raise TradingBotError(
+                "safe_address is required in configuration file. "
+                "Please add it to your config.yaml file."
+            )
 
         # Initialize components
         self.signer: Optional[OrderSigner] = None
@@ -210,15 +188,10 @@ class TradingBot:
         self.relayer_client: Optional[RelayerClient] = None
         self._api_creds: Optional[ApiCredentials] = None
 
-        # Load private key
+        # Load private key from config file
+        private_key = getattr(self.config, 'private_key', None) or os.environ.get('POLY_PRIVATE_KEY')
         if private_key:
             self.signer = OrderSigner(private_key)
-        elif encrypted_key_path and password:
-            self._load_encrypted_key(encrypted_key_path, password)
-
-        # Load API credentials
-        if api_creds_path:
-            self._load_api_creds(api_creds_path)
 
         # Initialize API clients
         self._init_clients()
@@ -258,13 +231,13 @@ class TradingBot:
             return
 
         try:
-            logger.info("Deriving L2 API credentials...")
+            #logger.info("Deriving L2 API credentials...")
             self._api_creds = self.clob_client.create_or_derive_api_key(self.signer)
             self.clob_client.set_api_creds(self._api_creds)
-            logger.info("L2 API credentials derived successfully")
+            logger.info("Derived successfully")
         except Exception as e:
             logger.warning(f"Failed to derive API credentials: {e}")
-            logger.warning("Some API endpoints may not be accessible")
+            #logger.warning("Some API endpoints may not be accessible")
 
     def _init_clients(self) -> None:
         """Initialize API clients."""

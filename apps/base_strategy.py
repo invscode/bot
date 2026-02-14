@@ -240,6 +240,8 @@ class BaseStrategy(ABC):
         # Start market manager
         if not await self.market.start():
             self.running = False
+            self.log("Failed to start strategy: Could not connect to market data", "error")
+            self.log("Check network connection and ensure Polymarket services are accessible", "info")
             return False
 
         # Wait for initial data

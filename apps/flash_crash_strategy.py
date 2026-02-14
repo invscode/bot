@@ -113,47 +113,58 @@ class FlashCrashStrategy(BaseStrategy):
         )
         lines.append(f"{Colors.BOLD}{'='*80}{Colors.RESET}")
 
-        # Orderbook display
+        # Orderbook display - UP section
         up_ob = self.market.get_orderbook("up")
-        down_ob = self.market.get_orderbook("down")
-
-        lines.append(f"{Colors.GREEN}{'UP':^39}{Colors.RESET}|{Colors.RED}{'DOWN':^39}{Colors.RESET}")
-        lines.append(f"{'Bid':>9} {'Size':>9} | {'Ask':>9} {'Size':>9}|{'Bid':>9} {'Size':>9} | {'Ask':>9} {'Size':>9}")
+        lines.append(f"{Colors.GREEN}{Colors.BOLD}UP Orderbook{Colors.RESET}")
+        lines.append(f"{'Bid':>9} {'Size':>9} | {'Ask':>9} {'Size':>9}")
         lines.append("-" * 80)
 
-        # Get 5 levels
+        # Get 5 levels for UP
         up_bids = up_ob.bids[:5] if up_ob else []
         up_asks = up_ob.asks[:5] if up_ob else []
-        down_bids = down_ob.bids[:5] if down_ob else []
-        down_asks = down_ob.asks[:5] if down_ob else []
 
         for i in range(5):
             up_bid = f"{up_bids[i].price:>9.4f} {up_bids[i].size:>9.1f}" if i < len(up_bids) else f"{'--':>9} {'--':>9}"
             up_ask = f"{up_asks[i].price:>9.4f} {up_asks[i].size:>9.1f}" if i < len(up_asks) else f"{'--':>9} {'--':>9}"
-            down_bid = f"{down_bids[i].price:>9.4f} {down_bids[i].size:>9.1f}" if i < len(down_bids) else f"{'--':>9} {'--':>9}"
-            down_ask = f"{down_asks[i].price:>9.4f} {down_asks[i].size:>9.1f}" if i < len(down_asks) else f"{'--':>9} {'--':>9}"
-            lines.append(f"{up_bid} | {up_ask}|{down_bid} | {down_ask}")
+            lines.append(f"{up_bid} | {up_ask}")
 
+        # UP summary
+        up_mid = up_ob.mid_price if up_ob else prices.get("up", 0)
+        up_spread = self.market.get_spread("up")
+        lines.append("-" * 80)
+        lines.append(
+            f"Mid: {Colors.GREEN}{up_mid:.4f}{Colors.RESET}  Spread: {up_spread:.4f}"
+        )
+        lines.append(f"{Colors.BOLD}{'='*80}{Colors.RESET}")
+
+        # Orderbook display - DOWN section
+        down_ob = self.market.get_orderbook("down")
+        lines.append(f"{Colors.RED}{Colors.BOLD}DOWN Orderbook{Colors.RESET}")
+        lines.append(f"{'Bid':>9} {'Size':>9} | {'Ask':>9} {'Size':>9}")
         lines.append("-" * 80)
 
-        # Summary
-        up_mid = up_ob.mid_price if up_ob else prices.get("up", 0)
-        down_mid = down_ob.mid_price if down_ob else prices.get("down", 0)
-        up_spread = self.market.get_spread("up")
-        down_spread = self.market.get_spread("down")
+        # Get 5 levels for DOWN
+        down_bids = down_ob.bids[:5] if down_ob else []
+        down_asks = down_ob.asks[:5] if down_ob else []
 
+        for i in range(5):
+            down_bid = f"{down_bids[i].price:>9.4f} {down_bids[i].size:>9.1f}" if i < len(down_bids) else f"{'--':>9} {'--':>9}"
+            down_ask = f"{down_asks[i].price:>9.4f} {down_asks[i].size:>9.1f}" if i < len(down_asks) else f"{'--':>9} {'--':>9}"
+            lines.append(f"{down_bid} | {down_ask}")
+
+        # DOWN summary
+        down_mid = down_ob.mid_price if down_ob else prices.get("down", 0)
+        down_spread = self.market.get_spread("down")
+        lines.append("-" * 80)
         lines.append(
-            f"Mid: {Colors.GREEN}{up_mid:.4f}{Colors.RESET}  Spread: {up_spread:.4f}           |"
             f"Mid: {Colors.RED}{down_mid:.4f}{Colors.RESET}  Spread: {down_spread:.4f}"
         )
 
         # History info
         up_history = self.prices.get_history_count("up")
         down_history = self.prices.get_history_count("down")
-        lines.append(
-            f"History: UP={up_history}/100 DOWN={down_history}/100 | "
-            f"Drop threshold: {self.flash_config.drop_threshold:.2f} in {self.config.price_lookback_seconds}s"
-        )
+        lines.append(f"History: UP={up_history}/100 DOWN={down_history}/100 | "
+                   f"Drop threshold: {self.flash_config.drop_threshold:.2f} in {self.config.price_lookback_seconds}s")
 
         lines.append(f"{Colors.BOLD}{'='*80}{Colors.RESET}")
 

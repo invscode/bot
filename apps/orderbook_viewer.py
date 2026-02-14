@@ -92,6 +92,10 @@ class OrderbookTUI:
         # Start market manager
         if not await self.market.start():
             print(f"{Colors.RED}Failed to start market manager{Colors.RESET}")
+            print(f"{Colors.YELLOW}Possible issues:{Colors.RESET}")
+            print(f"  1. Network connection problem - check your internet")
+            print(f"  2. No active market for {self.coin}")
+            print(f"  3. Gamma API not responding")
             return
 
         await self.market.wait_for_data(timeout=5.0)
@@ -127,39 +131,48 @@ class OrderbookTUI:
             lines.append(f"Slug: {market.slug}")
             lines.append("")
 
-        # Orderbook display
+        # Orderbook display - UP section
         up_ob = self.market.get_orderbook("up")
-        down_ob = self.market.get_orderbook("down")
-
-        lines.append(f"{Colors.GREEN}{'UP':^39}{Colors.RESET}|{Colors.RED}{'DOWN':^39}{Colors.RESET}")
-        lines.append(f"{'Bid':>9} {'Size':>9} | {'Ask':>9} {'Size':>9}|{'Bid':>9} {'Size':>9} | {'Ask':>9} {'Size':>9}")
+        lines.append(f"{Colors.GREEN}{Colors.BOLD}UP Orderbook{Colors.RESET}")
+        lines.append(f"{'Bid':>9} {'Size':>9} | {'Ask':>9} {'Size':>9}")
         lines.append("-" * 80)
 
-        # Get 10 levels for TUI
+        # Get 10 levels for UP
         up_bids = up_ob.bids[:10] if up_ob else []
         up_asks = up_ob.asks[:10] if up_ob else []
-        down_bids = down_ob.bids[:10] if down_ob else []
-        down_asks = down_ob.asks[:10] if down_ob else []
 
         for i in range(10):
             up_bid = f"{up_bids[i].price:>9.4f} {up_bids[i].size:>9.1f}" if i < len(up_bids) else f"{'--':>9} {'--':>9}"
             up_ask = f"{up_asks[i].price:>9.4f} {up_asks[i].size:>9.1f}" if i < len(up_asks) else f"{'--':>9} {'--':>9}"
-            down_bid = f"{down_bids[i].price:>9.4f} {down_bids[i].size:>9.1f}" if i < len(down_bids) else f"{'--':>9} {'--':>9}"
-            down_ask = f"{down_asks[i].price:>9.4f} {down_asks[i].size:>9.1f}" if i < len(down_asks) else f"{'--':>9} {'--':>9}"
-            lines.append(f"{up_bid} | {up_ask}|{down_bid} | {down_ask}")
+            lines.append(f"{up_bid} | {up_ask}")
 
+        # UP summary
+        up_mid = up_ob.mid_price if up_ob else 0
+        up_spread = self.market.get_spread("up")
+        lines.append("-" * 80)
+        lines.append(f"Mid: {Colors.GREEN}{up_mid:.4f}{Colors.RESET}  Spread: {up_spread:.4f}")
+        lines.append(f"{Colors.BOLD}{'='*80}{Colors.RESET}")
+
+        # Orderbook display - DOWN section
+        down_ob = self.market.get_orderbook("down")
+        lines.append(f"{Colors.RED}{Colors.BOLD}DOWN Orderbook{Colors.RESET}")
+        lines.append(f"{'Bid':>9} {'Size':>9} | {'Ask':>9} {'Size':>9}")
         lines.append("-" * 80)
 
-        # Summary
-        up_mid = up_ob.mid_price if up_ob else 0
-        down_mid = down_ob.mid_price if down_ob else 0
-        up_spread = self.market.get_spread("up")
-        down_spread = self.market.get_spread("down")
+        # Get 10 levels for DOWN
+        down_bids = down_ob.bids[:10] if down_ob else []
+        down_asks = down_ob.asks[:10] if down_ob else []
 
-        lines.append(
-            f"Mid: {Colors.GREEN}{up_mid:.4f}{Colors.RESET}  Spread: {up_spread:.4f}           |"
-            f"Mid: {Colors.RED}{down_mid:.4f}{Colors.RESET}  Spread: {down_spread:.4f}"
-        )
+        for i in range(10):
+            down_bid = f"{down_bids[i].price:>9.4f} {down_bids[i].size:>9.1f}" if i < len(down_bids) else f"{'--':>9} {'--':>9}"
+            down_ask = f"{down_asks[i].price:>9.4f} {down_asks[i].size:>9.1f}" if i < len(down_asks) else f"{'--':>9} {'--':>9}"
+            lines.append(f"{down_bid} | {down_ask}")
+
+        # DOWN summary
+        down_mid = down_ob.mid_price if down_ob else 0
+        down_spread = self.market.get_spread("down")
+        lines.append("-" * 80)
+        lines.append(f"Mid: {Colors.RED}{down_mid:.4f}{Colors.RESET}  Spread: {down_spread:.4f}")
 
         # Price history stats
         up_history = self.prices.get_history_count("up")

@@ -58,6 +58,48 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Suppress websockets 12.0+ AttributeError in connection_lost callback
+# This is a known compatibility issue in websockets 12.x
+class WebsocketsErrorFilter(logging.Filter):
+    """Filter to suppress websockets connection_lost AttributeError."""
+
+    def filter(self, record):
+        # Suppress AttributeError about 'recv_messages' in connection_lost callback
+        if "recv_messages" in record.getMessage() and "AttributeError" in record.getMessage():
+            return False
+        return True
+
+# Apply filter to asyncio logger where this error occurs
+asyncio_logger = logging.getLogger("asyncio")
+if not any(isinstance(f, WebsocketsErrorFilter) for f in asyncio_logger.filters):
+    asyncio_logger.addFilter(WebsocketsErrorFilter())
+
+# Patch asyncio event loop to suppress the websockets 12.0+ AttributeError
+_original_exception_handler = None
+
+
+def _exception_handler(loop, context):
+    """Custom exception handler to suppress websockets 12.0+ AttributeError."""
+    exception = context.get('exception')
+    if exception and isinstance(exception, AttributeError):
+        if 'recv_messages' in str(exception):
+            # Suppress this specific error from websockets 12.0+
+            return
+    # Call original handler for other exceptions
+    if _original_exception_handler:
+        _original_exception_handler(loop, context)
+
+
+# Install custom exception handler on module load
+try:
+    loop = asyncio.get_event_loop()
+    if not loop.get_exception_handler():
+        _original_exception_handler = loop.get_exception_handler()
+        loop.set_exception_handler(_exception_handler)
+except RuntimeError:
+    # No event loop running yet, will be set later
+    pass
+
 
 # WebSocket endpoints
 WSS_MARKET_URL = "wss://ws-subscriptions-clob.polymarket.com/ws/market"
@@ -330,6 +372,14 @@ class MarketWebSocket:
             if self._ws_connect is None:
                 raise RuntimeError("websockets is not installed")
 
+            # Clean up existing connection if any
+            if self._ws:
+                try:
+                    await self._ws.close()
+                except Exception:
+                    pass
+                self._ws = None
+
             self._ws = await self._ws_connect(
                 self.url,
                 ping_interval=self.ping_interval,
@@ -341,6 +391,16 @@ class MarketWebSocket:
             return True
         except Exception as e:
             logger.error(f"WebSocket connection failed: {e}")
+            # Clean up failed connection
+            if self._ws:
+                try:
+                    await self._ws.close()
+                except Exception:
+                    pass
+                self._ws = None
+            # Give time for any pending callbacks to complete
+            # This prevents AttributeError from websockets 12.0+ connection_lost callback
+            await asyncio.sleep(0.01)
             if self._on_error:
                 self._on_error(e)
             return False
@@ -383,7 +443,7 @@ class MarketWebSocket:
             return True
 
         subscribe_msg = {
-            "assets_ids": asset_ids,
+            "asset_ids": asset_ids,
             "type": "MARKET",
         }
 
@@ -418,7 +478,7 @@ class MarketWebSocket:
             return True
 
         subscribe_msg = {
-            "assets_ids": asset_ids,
+            "asset_ids": asset_ids,
             "operation": "subscribe",
         }
 
@@ -446,7 +506,7 @@ class MarketWebSocket:
         self._subscribed_assets.difference_update(asset_ids)
 
         unsubscribe_msg = {
-            "assets_ids": asset_ids,
+            "asset_ids": asset_ids,
             "operation": "unsubscribe",
         }
 

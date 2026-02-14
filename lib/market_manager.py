@@ -354,6 +354,12 @@ class MarketManager:
                 except Exception:
                     pass
 
+        @self.ws.on_error
+        def handle_error(e):  # pyright: ignore[reportUnusedFunction]
+            # Log WebSocket errors for debugging
+            # Error is handled by the WebSocket client's internal logging
+            pass
+
         # Subscribe to current market tokens
         token_list = list(self.current_market.token_ids.values())
         if token_list:
@@ -364,7 +370,12 @@ class MarketManager:
     async def _run_websocket(self) -> None:
         """Run WebSocket with auto-reconnect."""
         if self.ws:
-            await self.ws.run(auto_reconnect=True)
+            try:
+                await self.ws.run(auto_reconnect=True)
+            except Exception as e:
+                # Log error but don't crash - let auto-reconnect handle it
+                import logging
+                logging.error(f"WebSocket error in _run_websocket: {e}")
 
     async def _market_check_loop(self) -> None:
         """Periodically check for market changes."""
