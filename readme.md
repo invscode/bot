@@ -13,7 +13,7 @@ POLY_PRIVATE_KEY=0x100bbe4256a71611226723747e1551f0c6f137786e8509aa833892b7
 POLY_PROXY_WALLET=0xE62687bdbF095Db38014557b446970
 
 src\config.yaml:
-safe_address: "0xE62687bdbF095Db38014557b446970C1fa3"（最少要有这一条）
+safe_address: "0xE62687bdbF095Db38014557b446970"（最少要有这一条）
 
 apps/flash_crash_config.yaml：（下面是示例）
 coin: ETH              # 币种
